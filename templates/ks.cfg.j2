@@ -1,0 +1,143 @@
+# boot with kernel parameters
+#
+# inst.ks=http://...
+# ip=dhcp
+#
+
+# Install
+install
+text
+reboot
+cdrom
+#url --url http://centos.mirroraustria.at/7/os/x86_64
+#repo --name=updates --baseurl http://centos.mirroraustria.at/7/updates/x86_64
+
+# Input
+keyboard de-latin1-nodeadkeys
+lang en_GB.UTF-8
+
+# Clock
+timezone --utc Europe/Vienna
+
+# We do care about security
+authconfig --enableshadow --enablecache --passalgo=sha512
+firewall --enabled --ssh
+selinux --enforcing
+
+# generate password hash with python
+#
+# >>> import crypt
+# >>> crypt.crypt('password', '$6$' + base64.b64encode(os.urandom(6)))
+# or
+# >>> import crypt
+# >>> crypt.crypt("password", crypt.mksalt())
+#
+rootpw --iscrypted $6$...
+
+# Enable (or disable) some services
+services --enabled=acpid,sshd,chronyd --disabled=network
+skipx
+firstboot --disable
+
+bootloader --location=mbr
+network --bootproto dhcp --hostname {{ preinstall.hostname }}.{{ preinstall.domainname }} --onboot true --activate
+zerombr
+clearpart --all --initlabel
+part /boot --ondisk sda --size 512 --asprimary --fstype xfs
+part pv.00 --ondisk sda --size 9000 --grow --asprimary
+
+volgroup lvm.{{ preinstall.hostname }} pv.00
+logvol /              --fstype xfs   --name wurzel --size 2000 --vgname lvm.{{ preinstall.hostname }}
+logvol /tmp           --fstype xfs   --name tmp    --size 1000 --vgname lvm.{{ preinstall.hostname }} --fsoptions="defaults,nodev,nosuid,noexec"
+logvol /var           --fstype xfs   --name var    --size 1000 --vgname lvm.{{ preinstall.hostname }} --fsoptions="defaults,nodev,nosuid,noexec"
+logvol /var/log       --fstype xfs   --name log    --size 1000 --vgname lvm.{{ preinstall.hostname }} --fsoptions="defaults,nodev,nosuid,noexec"
+logvol /var/log/audit --fstype xfs   --name audit  --size 500  --vgname lvm.{{ preinstall.hostname }} --fsoptions="defaults,nodev,nosuid,noexec"
+logvol swap           --fstype swap  --name swap   --size 1000 --vgname lvm.{{ preinstall.hostname }}
+
+%pre --log=/tmp/ks-pre.log
+set -x -v
+%end
+
+%post --log=/root/ks-post.log
+set -x -v
+
+cat >>/etc/fstab <<- EOF
+/tmp    /var/tmp    none    bind                0 0
+tmpfs   /dev/shm    tmpfs   defaults,nodev,nosuid,noexec    0 0
+EOF
+
+# Create root's .ssh
+if [ ! -d /root/.ssh ] ; then
+   install -d --mode=700 /root/.ssh
+fi
+
+cat > /root/.ssh/authorized_keys << PUBLIC_KEY
+ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAQEApO3oX+EO12h5mgr/7666CA8e/Qqkw0NoRqym+Zr8GYg1WiPqFzHQNAJXEh9BN2hDYPeuwLCPWlKcP5p2WjfFp6BdAqli335PsBRZY0rqL4O2DIB83Ckz4vItaOAUpBwQzc7ZaJXlz9p3Y7An/Mqfvp87dkI33Tu8EZSvtHic8N+mBFZXkR+4OFURi2ZZgeYCu++xW3fBz6S/t0CmSxUvJ68LL3jpEgRAJKl8KKGmRZ4BvV6wXPhx0LiscWKht8rTBtGCxjlR2/l1mukqmAqWHCJdNgaNlod/xeBHnhdoSf3bM7eK1nzZCGZd1pB/IK7HGcaLYH64yttC1QnhPWpvEw== falbm
+PUBLIC_KEY
+
+# Disable authentication with Passwords
+sed -i 's&^#\?PermitRootLogin[ \t]*.*&PermitRootLogin without-password&' /etc/ssh/sshd_config
+sed -i "s&^PasswordAuthentication[ \t]*.*&PasswordAuthentication no&g" /etc/ssh/sshd_config
+
+%end
+
+%post --nochroot --log=/mnt/sysimage/root/ks-post-nochroot.log
+set -x -v
+
+# Copy anacondas logfiles
+cp /tmp/*log /mnt/sysimage/root/
+
+# Copy the pre log
+cp /tmp/ks-pre.log /mnt/sysimage/root/ks-pre.log
+cp /tmp/network.ks /mnt/sysimage/root/
+cp /tmp/partitions.ks /mnt/sysimage/root/
+
+# Copy the original ks file (that's me!)
+cp /run/install/ks.cfg /mnt/sysimage/root/
+
+%end
+
+%packages --nobase --excludedocs
+-teamd
+-avahi-autoipd
+-avahi-libs
+-avahi
+-alsa-tools-firmware
+-alsa-lib
+-alsa-firmware
+-ModemManager-glib
+-gsettings-desktop-schemas
+-glib-networking
+-libsoup
+@Core --nodefaults
+acpid
+#epel-release
+openssh-clients
+openssh-server
+rsync
+parted
+gnupg
+libsemanage-python
+policycoreutils-python
+-linux-firmware
+-iwl6000g2a-firmware
+-iwl105-firmware
+-iwl3160-firmware
+-iwl4965-firmware
+-aic94xx-firmware
+-ivtv-firmware
+-iwl135-firmware
+-iwl2030-firmware
+-iwl3945-firmware
+-iwl7260-firmware
+-iwl100-firmware
+-iwl7265-firmware
+-iwl6000-firmware
+-iwl6000g2b-firmware
+-iwl5000-firmware
+-iwl2000-firmware
+-iwl6050-firmware
+-iwl1000-firmware
+-iwl5150-firmware
+
+%end
